@@ -1,0 +1,29 @@
+
+=== Bhayshul Tuten: Anytime Touchdown  (market 5649038) ===
+Outcomes: ['Yes', 'No']  | page prices: [1.0, 0.0]
+Event start: 18 Oct 15:30:00 | endDate: 18 Oct 15:30:00 | closed: 18 Oct 22:02:02 (Europe/Madrid)
+UMA status (gamma): resolved ["proposed", "proposed"] | source: https://www.nfl.com/scores
+RESOLVED: Yes
+OI: $5.00 | Volume: 1,890.54 | Liquidity: $0.00
+Book Yes: no order book (closed / not accepting orders)
+Book No: no order book (closed / not accepting orders)
+!! thin book: displayed price unreliable (liquidity $0 < $50, empty order book)
+Trades: 8 total
+  pre-start : Yes BUY: 1,891 sh / $762
+  post-start: none
+    18 Oct 14:47:09    Yes BUY       5.00 @ 0.400
+    18 Oct 14:53:57    Yes BUY      25.00 @ 0.400
+    18 Oct 15:10:35    Yes BUY   1,211.00 @ 0.400
+    18 Oct 15:12:29    Yes BUY     550.00 @ 0.410
+    18 Oct 15:29:35    Yes BUY      24.39 @ 0.410
+Top holders:
+  Yes: top wallet 0xddfe6227 5 sh = 100% of Yes shares | top-10 hold 100%
+  No: top wallet Anjun 1,111 sh = 38% of No shares | top-10 hold 100%
+FINAL: market resolved Yes; the verdict below is what market data alone says
+VERDICT: leans Yes (weak)  (money-weighted P(Yes) = 0.72, weight $10)
+  - post-start displayed price, time-avg (no live book; fixed $10 weight): P(Yes)=0.72, weight $10
+  * only $10 of money-weight behind the verdict
+UMA proposed: Yes at 18 Oct 18:54:06 (tx 0x89456f48ff…)
+UMA settled: Yes at 18 Oct 22:01:33 (tx 0x3d4616bd70…)
+UMA vs verdict: ALIGNED (proposed Yes, verdict leans Yes (weak))
+Chart: sample_5649038.png

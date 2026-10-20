@@ -1,0 +1,25 @@
+
+=== Nottingham Forest FC vs. Arsenal FC: 1st Half O/U 4.5 Total Corners  (market 5313440) ===
+Outcomes: ['Over', 'Under']  | page prices: [0.995, 0.005]
+Event start: 18 Oct 17:30:00 | endDate: 18 Oct 17:30:00 | closed: n/a (Europe/Madrid)
+UMA status (gamma): proposed ["proposed", "proposed"] | source: https://www.premierleague.com/
+OI: $3,188.95 | Volume: 3,188.95 | Liquidity: $27,653.89
+Book Over: bids [(0.991, 500.0), (0.99, 27861.0), (0.8, 30.0)] | asks []
+Book Under: bids [] | asks [(0.009, 500.0), (0.01, 27861.0), (0.2, 30.0)]
+Trades: 4 total
+  pre-start : Over BUY: 3,187 sh / $1,579, Under BUY: 2 sh / $1
+  post-start: none
+    18 Oct 16:56:35   Over BUY     104.67 @ 0.471
+    18 Oct 17:10:08  Under BUY       1.79 @ 0.560
+    18 Oct 17:17:17   Over BUY   3,018.66 @ 0.497
+    18 Oct 17:23:27   Over BUY      63.83 @ 0.470
+Top holders:
+  Over: top wallet Shimi1234 3,019 sh = 95% of Over shares | top-10 hold 100%
+  Under: top wallet VeryLucky888 1,500 sh = 47% of Under shares | top-10 hold 100%
+VERDICT: leans Over (strong)  (money-weighted P(Over) = 1.00, weight $496)
+  - resting book: P(Over)=1.00, weight $496
+  * Over bid 0.99 with no Over offers
+UMA proposed: Over at 18 Oct 19:29:06 (tx 0x779f5af434…)
+UMA settled: Over at 18 Oct 22:36:36 (tx 0x555bae5e35…)
+UMA vs verdict: ALIGNED (proposed Over, verdict leans Over (strong))
+Chart: sample_5313440.png

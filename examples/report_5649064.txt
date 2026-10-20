@@ -1,0 +1,29 @@
+
+=== Woody Marks: Anytime Touchdown  (market 5649064) ===
+Outcomes: ['Yes', 'No']  | page prices: [0.0, 1.0]
+Event start: 18 Oct 15:30:00 | endDate: 18 Oct 15:30:00 | closed: 18 Oct 22:04:02 (Europe/Madrid)
+UMA status (gamma): resolved ["proposed", "proposed"] | source: https://www.nfl.com/scores
+RESOLVED: No
+OI: $0.00 | Volume: 1,542.62 | Liquidity: $0.00
+Book Yes: bids [] | asks []
+Book No: bids [] | asks []
+!! thin book: displayed price unreliable (liquidity $0 < $50, empty order book)
+Trades: 10 total
+  pre-start : Yes BUY: 147 sh / $62
+  post-start: No BUY: 88 sh / $71, Yes BUY: 1,307 sh / $542
+    18 Oct 16:10:57    Yes BUY       5.00 @ 0.450
+    18 Oct 16:12:15     No BUY      38.47 @ 0.550
+    18 Oct 17:44:21    Yes BUY     159.70 @ 0.310
+    18 Oct 17:45:02    Yes BUY       5.81 @ 0.310
+    18 Oct 18:49:54     No BUY      50.00 @ 0.999
+Top holders:
+  Yes: top wallet 0x6387cfb4 1,236 sh = 79% of Yes shares | top-10 hold 100%
+FINAL: market resolved No; the verdict below is what market data alone says
+VERDICT: leans No (weak)  (money-weighted P(Yes) = 0.31, weight $813)
+  - post-start trades: P(Yes)=0.36, weight $703
+  - post-start displayed price, time-avg (no live book; fixed $10 weight): P(Yes)=0.27, weight $10
+  - extreme post-start No buys: P(Yes)=0.00, weight $100
+UMA proposed: No at 18 Oct 18:54:08 (tx 0x17b8c72c11…)
+UMA settled: No at 18 Oct 22:03:35 (tx 0xfea9439810…)
+UMA vs verdict: ALIGNED (proposed No, verdict leans No (weak))
+Chart: sample_5649064.png

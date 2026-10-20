@@ -1,0 +1,29 @@
+
+=== Game 2: Both Teams Destroy Barracks?  (market 5862530) ===
+Outcomes: ['Yes', 'No']  | page prices: [0.0, 1.0]
+Event start: 18 Oct 17:45:00 | endDate: 18 Oct 23:45:00 | closed: 18 Oct 22:12:32 (Europe/Madrid)
+UMA status (gamma): resolved ["proposed", "proposed"] | source: https://www.dotabuff.com
+RESOLVED: No
+OI: $1,401.00 | Volume: 1,412.99 | Liquidity: $0.00
+Book Yes: no order book (closed / not accepting orders)
+Book No: no order book (closed / not accepting orders)
+!! thin book: displayed price unreliable (liquidity $0 < $50, empty order book)
+Trades: 3 total
+  pre-start : Yes BUY: 1,401 sh / $1,387
+  post-start: No BUY: 12 sh / $10
+    18 Oct 12:13:32    Yes BUY   1,401.00 @ 0.990
+    18 Oct 19:52:42     No BUY       3.52 @ 0.850
+    18 Oct 19:52:42     No BUY       8.47 @ 0.850
+Top holders:
+  Yes: top wallet kopler 1,401 sh = 99% of Yes shares | top-10 hold 100%
+  No: top wallet gerip 1,401 sh = 100% of No shares | top-10 hold 100%
+FINAL: market resolved No; the verdict below is what market data alone says
+VERDICT: leans No (weak)  (money-weighted P(Yes) = 0.22, weight $26)
+  - post-start trades: P(Yes)=0.15, weight $10
+  - post-start displayed price, time-avg (no live book; fixed $10 weight): P(Yes)=0.42, weight $10
+  - extreme post-start No buys: P(Yes)=0.00, weight $6
+  * only $26 of money-weight behind the verdict
+UMA proposed: No at 18 Oct 19:52:39 (tx 0xbdb50097f0…)
+UMA settled: No at 18 Oct 22:11:39 (tx 0x37db985cba…)
+UMA vs verdict: ALIGNED (proposed No, verdict leans No (weak))
+Chart: sample_5862530.png
