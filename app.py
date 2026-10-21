@@ -36,6 +36,12 @@ def esc(text):
 def why_list(r):
     """Plain-English reasons behind the verdict."""
     o, v, out = r["outcomes"], r["verdict"], []
+    if v.get("idx") == pm.FIFTY:
+        for line in v["void"]["reasons"]:
+            out.append(f"⚖️ {line}")
+        for n in v["notes"]:
+            out.append(f"ℹ️ {n}")
+        return out
     for p0, w, lab in v["comps"]:
         lean = o[0] if p0 >= 0.5 else o[1]
         pct = p0 if p0 >= 0.5 else 1 - p0
@@ -56,13 +62,17 @@ def why_list(r):
 
 def verdict_card(r, tz):
     v, o = r["verdict"], r["outcomes"]
-    text = v["text"]
-    if v["idx"] is not None:
-        strength = "strong" if "strong" in text else "weak"
+    kind, strength = pm.verdict_kind(v)
+    if kind == "outcome":
         head = f"Traders expect **{o[v['idx']]}**"
         color = "#1b5e20" if strength == "strong" else "#8d6e00"
+    elif kind == "50-50":
+        head = "Traders expect **50-50** (likely cancelled / void)"
+        color = "#4a148c"
+    elif kind == "toss-up":
+        strength, head, color = "toss-up", "Traders see a **toss-up**", "#555"
     else:
-        strength, head, color = "not enough data", "Traders' view is **unclear**", "#555"
+        strength, head, color = "not enough data", "Traders' view is **unclear** (not enough data)", "#555"
     with st.container(border=True):
         c1, c2 = st.columns([3, 2])
         with c1:
@@ -236,9 +246,14 @@ def holders_table(r):
 def extra_reads(r):
     o, out = r["outcomes"], []
     c, v = r["conviction"], r["verdict"]
+    if v.get("idx") == pm.FIFTY:
+        out.append("_The two reads below describe positioning before the event was voided; "
+                   "with a 50-50 payout expected they are context only._")
     if c["p0"] is not None:
         out.append(f"🧠 **Smart money (conviction-weighted)**: {o[0]} {c['share0']:.0%} / {o[1]} {1 - c['share0']:.0%} of conviction · "
-                   f"implied P({o[0]}) = **{c['p0']:.0%}** · {'blended 40% into the verdict' if v.get('conviction_used') else 'neutral, not blended'}"
+                   f"implied P({o[0]}) = **{c['p0']:.0%}**"
+                   + (f" (post-start + resting only: **{c['p0_post']:.0%}**)" if c.get("p0_post") is not None else "")
+                   + f" · {'blended 40% into the verdict' if v.get('conviction_used') else 'not blended'}"
                    + (f" (money-only P was {v['p0_base']:.0%})" if v.get("p0_base") is not None else ""))
     w = r.get("wallets")
     if w and not w.get("error"):
@@ -391,8 +406,9 @@ if len(results) > 1:
     for r in results:
         v = r["verdict"]
         rows.append(dict(id=r["id"], question=r["question"], status=r["status"],
-                         expects=r["outcomes"][v["idx"]] if v["idx"] is not None else "unclear",
-                         strength=("strong" if "strong" in v["text"] else "weak") if v["idx"] is not None else "not enough data",
+                         expects=(r["outcomes"][v["idx"]] if v["idx"] in (0, 1) else
+                                  "50-50 (void)" if v["idx"] == pm.FIFTY else pm.verdict_kind(v)[0]),
+                         strength=pm.verdict_kind(v)[1] or "-",
                          usd_weight=v.get("weight"), oi=r["oi"], volume=r["volume"], liquidity=r["liquidity"],
                          uma_proposal=r["proposals"][-1]["label"] if r["proposals"] else ("skipped" if r["uma_skipped"] else "-"),
                          conviction_p=r["conviction"]["p0"],

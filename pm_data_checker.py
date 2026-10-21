@@ -26,6 +26,9 @@ POLYGON_RPCS = ["https://polygon-bor-rpc.publicnode.com", "https://polygon.drpc.
 UMA_OO = ["0xee3Afe347D5C74317041E2618C49534dAf887c24", "0x2C0367a9DB231dDeBd88a94b4f6461a6e47C58B1"]
 
 THIN_LIQ = 50.0      # USD
+FIFTY = "50-50"      # verdict / UMA outcome index for a 50-50 (cancelled / void) resolution
+FIFTY_LABEL = "50-50 (cancel/void)"
+VOID_BAND = (0.47, 0.53)
 WIDE_SPREAD = 0.30
 EXTREME = 0.85       # post-start trades at/above this price are "near-certain" bets
 S = requests.Session()
@@ -258,6 +261,8 @@ def uma_label(price_raw, anc, outcomes):
         label = {0.0: p1, 1.0: p2, 0.5: p3}.get(round(v, 2))
     else:
         label = names.get(round(v, 2))
+    if abs(v - 0.5) < 1e-9:      # 0.5e18 = 5e17: YES_OR_NO_QUERY "unknown / 50-50" -> market is voided 50-50
+        return FIFTY_LABEL, FIFTY
     if label is None:
         return f"price {v}", None
     for i, o in enumerate(outcomes):
@@ -316,12 +321,26 @@ def verdict(outcomes, trades, books, start_ts, hist0=None, stop_ts=None):
         if ask0 - bid0 > WIDE_SPREAD:
             book_w *= 0.5
             notes.append(f"wide spread ({ask0 - bid0:.2f})")
-    elif bid0 is not None:       # someone bids outcome0, nobody offers it
-        book_p, book_w = (bid0 + 1) / 2, bid_usd
-        notes.append(f"{outcomes[0]} bid {bid0:.2f} with no {outcomes[0]} offers")
-    elif ask0 is not None:       # outcome0 offered, nobody bids -> outcome1 bid with no offers
-        book_p, book_w = ask0 / 2, ask_usd
-        notes.append(f"{outcomes[0]} offered at {ask0:.2f} with no bids ({outcomes[1]} favoured)")
+    elif bid0 is not None or ask0 is not None:
+        # one-sided book. Its midpoint (e.g. bid none / ask 0.50 -> 0.25) is an artifact, never used directly.
+        one = bid0 if bid0 is not None else ask0
+        usd_ = bid_usd if bid0 is not None else ask_usd
+        lo, hi = VOID_BAND
+        if lo - 0.02 <= one <= hi + 0.02:
+            # quotes at ~0.50 on one side only: consistent with 50-50 (void) pricing, not a lean
+            book_p, book_w = 0.5, 0.5 * usd_
+            what = f"{outcomes[0]} bid {one:.2f} with no offers" if bid0 is not None else \
+                f"{outcomes[0]} offered at {one:.2f} with no bids (= {outcomes[1]} bid {1 - one:.2f})"
+            notes.append(f"{what}: consistent with 50-50 pricing, not a lean; the one-sided midpoint is an artifact")
+        elif bid0 is not None and bid0 > hi:   # someone bids outcome0 high, nobody offers it
+            book_p, book_w = (bid0 + 1) / 2, bid_usd
+            notes.append(f"{outcomes[0]} bid {bid0:.2f} with no {outcomes[0]} offers")
+        elif ask0 is not None and ask0 < lo:   # outcome0 offered cheap, nobody bids -> outcome1 favoured
+            book_p, book_w = ask0 / 2, ask_usd
+            notes.append(f"{outcomes[0]} offered at {ask0:.2f} with no bids ({outcomes[1]} favoured)")
+        else:
+            notes.append(f"one-sided book ({'bid' if bid0 is not None else 'ask'} {one:.2f} for {outcomes[0]}) "
+                         "is uninformative; its midpoint is an artifact and is ignored")
     if book_p is not None:
         comps.append((book_p, book_w, "resting book"))
 
@@ -364,7 +383,7 @@ def verdict(outcomes, trades, books, start_ts, hist0=None, stop_ts=None):
     one_sided = book_p is not None and (bid0 is None or ask0 is None)
     agree = [c for c in comps if (c[0] >= 0.5) == (idx == 0) and c[0] != 0.5]
     if conf < 0.2:
-        text = "not enough data (toss-up)"
+        text = "toss-up (no clear lean)"
         idx = None
     elif conf >= 0.6 and total_w >= 50 and not used_pre and (extreme[idx] > 0 or one_sided) and len(agree) == len(comps):
         text = f"leans {outcomes[idx]} (strong)"
@@ -558,30 +577,43 @@ def conviction(outcomes, trades, books, start_ts, post_ts, now=None):
         # implied P: a fill at q >= 0.5 says "at least q"; below 0.5 it is treated as 50/50 evidence
         num = sum(x["score"] * (max(x["q"], 0.5) if x["outcome_idx"] == 0 else 1 - max(x["q"], 0.5)) for x in items)
         p0 = num / tot
+    # the same read restricted to post-start fills + resting orders (pre-start fills are opinion, not information)
+    late = [x for x in items if x["kind"] == "resting" or x["phase"] != "pre-start"]
+    ltot = sum(x["score"] for x in late)
+    p0_post = (sum(x["score"] * (max(x["q"], 0.5) if x["outcome_idx"] == 0 else 1 - max(x["q"], 0.5)) for x in late) / ltot) if ltot else None
     items.sort(key=lambda x: -x["score"])
     return dict(items=items, score=score, share0=score[0] / tot if tot else None, p0=p0, total=tot,
-                usd=sum(x["usd"] for x in items))
+                usd=sum(x["usd"] for x in items), p0_post=p0_post, total_post=ltot)
 
 
 def combine_verdict(base, conv, outcomes, min_score=5.0):
     """Blend the money-weighted verdict (60%) with the conviction-implied probability (40%)."""
     v = dict(base)
     v["notes"] = list(base["notes"])
-    if conv["p0"] is None or conv["total"] < min_score:
+    if base.get("idx") == FIFTY:
         v["conviction_used"] = False
         return v
-    if abs(conv["p0"] - 0.5) < 0.1:      # conviction is neutral (mostly cheap buys): don't dilute the base read
+    # use post-start + resting conviction when there is enough of it; fall back to all fills otherwise
+    if conv.get("p0_post") is not None and conv.get("total_post", 0) >= min_score:
+        cp, which = conv["p0_post"], "post-start"
+    else:
+        cp, which = conv["p0"], "all"
+    v["conviction_p0"], v["conviction_scope"] = cp, which
+    if cp is None or conv["total"] < min_score:
+        v["conviction_used"] = False
+        return v
+    if abs(cp - 0.5) < 0.1:      # conviction is neutral (mostly cheap buys): don't dilute the base read
         v["conviction_used"] = False
         v["notes"].append("conviction-weighted orders are neutral (mostly cheap / near-50c orders)")
         return v
     v["conviction_used"] = True
-    p = conv["p0"] if base["p0"] is None else 0.6 * base["p0"] + 0.4 * conv["p0"]
-    conv_idx = 0 if conv["p0"] >= 0.5 else 1
+    p = cp if base["p0"] is None else 0.6 * base["p0"] + 0.4 * cp
+    conv_idx = 0 if cp >= 0.5 else 1
     v["p0_base"], v["p0"] = base["p0"], p
     conf = abs(p - 0.5) * 2
     idx = 0 if p >= 0.5 else 1
     if conf < 0.2:
-        v["idx"], v["text"] = None, "not enough data (toss-up)"
+        v["idx"], v["text"] = None, "toss-up (no clear lean)"
     else:
         strong = "strong" in base["text"] and base["idx"] == idx == conv_idx and conf >= 0.6
         v["idx"], v["text"] = idx, f"leans {outcomes[idx]} ({'strong' if strong else 'weak'})"
@@ -777,11 +809,84 @@ def resolve_ref(ref):
     return None
 
 
+def void_check(outcomes, trades, books, conv_items, start_ts, post_ts, now=None):
+    """Detect a cancelled / void event from price action: after the event should be over, fills and the resting
+    book cluster at ~0.50 and nobody shows conviction toward either side.
+      A: >= 70% of post-start fill USD AND >= 70% of resting USD priced within 0.47-0.53
+      B: post-start VWAP within 0.47-0.53 AND every existing best quote at 0.50
+      C: book empty (orders pulled / not accepting) AND >= 70% of post-start fill USD in the band, VWAP in the band,
+         at least 2 post-start fills worth >= $20 (weak only)
+      + post-start conviction (post-start fills + resting orders) implies P within 0.40-0.60, no post-start fill >= 0.85
+    Strong if A and B both hold with >= $50 of post-start fills and >= $50 resting; weak otherwise.
+    Returns dict(hit, strength, reasons, notes)."""
+    now = now or time.time()
+    lo, hi = VOID_BAND
+    res = dict(hit=False, strength=None, reasons=[], notes=[])
+    if not start_ts or now < start_ts:
+        return res
+    post = [t for t in trades if t["timestamp"] >= start_ts]
+    post_usd = sum(fnum(t["price"]) * fnum(t["size"]) for t in post)
+    band_usd = sum(fnum(t["price"]) * fnum(t["size"]) for t in post if lo <= fnum(t["price"]) <= hi)
+    vw = (sum(trade_p0(t)[0] * trade_p0(t)[1] for t in post) / post_usd) if post_usd else None
+    rest = [x for x in conv_items if x["kind"] == "resting"]
+    rest_usd = sum(x["usd"] for x in rest)
+    rest_band = sum(x["usd"] for x in rest if lo <= x["q"] <= hi)
+    bid0, ask0, _, _ = best_levels(books)
+    quotes = [q for q in (bid0, ask0) if q is not None]
+    at_half = bool(quotes) and all(abs(q - 0.5) < 0.005 for q in quotes)
+    A = post_usd > 0 and band_usd / post_usd >= 0.7 and rest_usd > 0 and rest_band / rest_usd >= 0.7
+    B = vw is not None and lo <= vw <= hi and at_half
+    C = not rest and not quotes and len(post) >= 2 and post_usd >= 20 and band_usd / post_usd >= 0.7 and lo <= vw <= hi
+    pc = [x for x in conv_items if x["kind"] == "resting" or (x["kind"] == "fill" and x["ts"] >= start_ts)]
+    tot = sum(x["score"] for x in pc)
+    p_conv = (sum(x["score"] * (max(x["q"], 0.5) if x["outcome_idx"] == 0 else 1 - max(x["q"], 0.5)) for x in pc) / tot) if tot else None
+    extreme = any(x["kind"] == "fill" and x["ts"] >= start_ts and x["q"] >= EXTREME for x in pc)
+    neutral = (p_conv is None or 0.4 <= p_conv <= 0.6) and not extreme
+    if not (A or B or C):
+        return res
+    if not neutral:
+        res["notes"].append("prices cluster near 0.50 but post-start conviction leans to one side: not treated as void")
+        return res
+    if post_ts and now < post_ts:
+        res["notes"].append("prices cluster at 0.50 while the event may still be live: could be a coin-flip, not a void")
+        return res
+    res["hit"] = True
+    res["strength"] = "strong" if (A and B and post_usd >= 50 and rest_usd >= 50) else "weak"
+    if post_usd:
+        res["reasons"].append(f"{band_usd / post_usd:.0%} of post-start fills (${post_usd:,.0f}) traded at {lo:.2f}-{hi:.2f}"
+                              + (f"; VWAP P({outcomes[0]}) = {vw:.2f}" if vw is not None else ""))
+    if C and not (A or B):
+        res["reasons"].append("the order book is now empty, so this rests on the fills alone")
+    if rest_usd:
+        res["reasons"].append(f"{rest_band / rest_usd:.0%} of resting orders (${rest_usd:,.0f}) sit at {lo:.2f}-{hi:.2f}"
+                              + (" and the best quotes are exactly 0.50" if at_half else ""))
+    res["reasons"].append("no post-start conviction toward either side"
+                          + (f" (conviction P({outcomes[0]}) = {p_conv:.2f})" if p_conv is not None else ""))
+    res["reasons"].append("traders are pricing a 50-50 payout: the event was most likely cancelled / voided")
+    return res
+
+
+def verdict_kind(v):
+    """'outcome' | '50-50' | 'toss-up' | 'not enough data' and the strength ('strong'/'weak'/None)."""
+    t = v.get("text", "")
+    strength = "strong" if "(strong)" in t else ("weak" if "(weak)" in t else None)
+    if v.get("idx") == FIFTY:
+        return "50-50", strength
+    if v.get("idx") in (0, 1):
+        return "outcome", strength
+    if t.startswith("toss-up"):
+        return "toss-up", None
+    return "not enough data", None
+
+
 def market_status(m):
     prices = [fnum(x) for x in jl(m.get("outcomePrices"))]
     outcomes = jl(m.get("outcomes"))
     if m.get("closed") and prices and max(prices) == 1.0:
         return "resolved", outcomes[prices.index(1.0)]
+    if m.get("closed") and len(prices) == 2 and all(abs(p - 0.5) < 1e-6 for p in prices) and \
+            (m.get("umaResolutionStatus") or "").lower() == "resolved":
+        return "resolved", FIFTY_LABEL
     st = (m.get("umaResolutionStatus") or "").lower()
     if st in ("proposed", "disputed", "challenged"):
         return st, None
@@ -844,9 +949,22 @@ def analyze(ref, use_uma=True, use_wallets=True):
     post_ts = post_boundary(start_ts, end_ts, proposals)
     conv = conviction(outcomes, trades, books, start_ts, post_ts)
     v = combine_verdict(base, conv, outcomes)
+    void = void_check(outcomes, trades, books, conv["items"], start_ts, post_ts)
+    if void["hit"]:
+        v = dict(v, idx=FIFTY, p0=0.5, text=f"expects 50-50, likely cancelled/void ({void['strength']})",
+                 notes=list(v["notes"]) + ["50-50 expected: the conviction and track-record reads describe positioning "
+                                           "before the cancellation and matter less"], conviction_used=False)
+    else:
+        v = dict(v, notes=list(v["notes"]) + void["notes"])
+    v["void"] = void
+    _b0, _a0, _, _ = best_levels(books)
+    if (_b0 is None) != (_a0 is None) and prices and not m.get("closed"):
+        v["notes"].append(f"page price {prices[0]:.2f}/{prices[1] if len(prices) > 1 else 0:.2f} is the midpoint of a one-sided "
+                          f"book ({'bid' if _b0 is not None else 'ask'} {(_b0 if _b0 is not None else _a0):.2f}, other side empty) "
+                          "and is ignored")
     mm_flags = book_mm_flags(books, outcomes)
     status0, resolved0 = market_status(m)
-    lean_idx = outcomes.index(resolved0) if resolved0 in outcomes else v["idx"]
+    lean_idx = outcomes.index(resolved0) if resolved0 in outcomes else (v["idx"] if v["idx"] in (0, 1) else None)
     wallets = None
     if use_wallets:
         try:
@@ -981,7 +1099,9 @@ def main():
     c = r["conviction"]
     if c["p0"] is not None:
         P(f"CONVICTION: smart-money share {outcomes[0]} {c['share0']:.0%} / {outcomes[1]} {1 - c['share0']:.0%}, "
-          f"conviction-implied P({outcomes[0]}) = {c['p0']:.2f} (score {c['total']:,.0f}; "
+          f"conviction-implied P({outcomes[0]}) = {c['p0']:.2f}"
+          + (f", post-start + resting only {c['p0_post']:.2f}" if c.get("p0_post") is not None else "")
+          + f" (score {c['total']:,.0f}; "
           f"{'blended into verdict' if v.get('conviction_used') else 'not blended'})")
         for x in c["items"][:5]:
             P(f"    {x['score']:>8,.1f}  {x['kind']:<7} {x['phase']:<9} {x['desc']}  (${x['usd']:,.2f})")

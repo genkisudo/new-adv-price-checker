@@ -67,8 +67,43 @@ Each signal becomes an implied probability for outcome 1, with a USD weight:
    not information.
 
 The verdict is **strong** when |P - 0.5| ≥ 0.3, at least $50 of weight is behind it, every signal agrees, and there
-is either an extreme fill or a one-sided book. It is **not enough data** when less than $5 of weight is behind it or
-P falls between 0.4 and 0.6. Otherwise it is **weak**.
+is either an extreme fill or a one-sided book. It is **not enough data** when less than $5 of weight is behind it,
+and a **toss-up** when P falls between 0.4 and 0.6. Otherwise it is **weak**. The 50-50 check below can override
+any of these.
+
+### Possible verdicts
+A verdict is one of four things: **an outcome** (`leans X (strong|weak)`), **50-50** (`expects 50-50, likely
+cancelled/void`), **toss-up** (enough money, but P is within 0.4-0.6), or **not enough data** (less than $5 of
+weight).
+
+### 50-50 (cancelled / void) detection
+When an event is cancelled, Polymarket markets usually resolve 50-50 and both outcomes pay $0.50. Traders who know
+this price both sides at ~0.50, and on a thin book that pattern used to be misread as a lean.
+
+- **UMA decoding**: a proposed price of `0.5e18` (5e17) for a YES_OR_NO_QUERY is "p3 = unknown / 50-50". It is
+  decoded as the outcome **`50-50 (cancel/void)`**. When the verdict is also 50-50, alignment compares the two
+  and reports ALIGNED. A market that closed with prices 0.5/0.5 shows as *resolved 50-50 (cancel/void)*.
+- **One-sided books at 0.50**: an outcome offered at exactly ~0.50 with no bids (which mirrors to the other
+  outcome bid at 0.50 with no asks) is **consistent with 50-50**. It counts as P = 0.50, not as "the other side is
+  favoured". Its one-sided midpoint (bid none / ask 0.50 → 0.25 on the page) is an artifact; it is noted and never
+  used. Any other one-sided quote counts only when it says something: a bid above 0.53 with no offers, or an
+  offer below 0.47 with no bids. Everything else is noted as uninformative.
+- **Detector from price action.** It only runs after the event should be over (the post-end boundary). It needs
+  at least one of:
+  - **A**: at least 70% of post-start fill USD **and** at least 70% of resting-order USD priced within 0.47-0.53;
+  - **B**: the post-start VWAP is within 0.47-0.53 **and** every best quote is exactly 0.50;
+  - **C**: the book is already empty, at least 70% of post-start fill USD is within the band, the VWAP is within
+    the band, and there are at least 2 post-start fills worth at least $20.
+
+  It also requires **no conviction toward either side**. Post-start conviction (post-start fills and resting
+  orders) must imply a probability within 0.40-0.60, and no post-start fill can be at 0.85 or higher. **Strong**
+  means A and B both hold with at least $50 of post-start fills and at least $50 resting; anything else is
+  **weak**. While the event may still be live, a 0.50 cluster is only noted (it could be a real coin-flip).
+- With a 50-50 verdict, the conviction and track-record reads stay visible but are labelled as context. They
+  describe positioning *before* the cancellation.
+- Example: market 5591225 (a MODUS darts match that was cancelled). It used to read "leans Sander" because of a
+  lone 0.50 ask. It now says *expects 50-50, likely cancelled/void* and is ALIGNED with the 50-50 UMA proposal.
+  It was strong while the 0.50 order was on the book, weak once the book emptied, and it later settled 50-50.
 
 ### Conviction-weighted orders
 Every taker fill and every resting order on the book gets a score:
@@ -89,8 +124,10 @@ Every taker fill and every resting order on the book gets a score:
 - **Aggregation**: the "smart-money share" is each outcome's share of the total score. The conviction-implied
   P(outcome 1) is the score-weighted average of max(q, 0.5) for that outcome's side. A buy below 50¢ only says
   "not as unlikely as the price", so it counts as 50/50 evidence.
-- **Effect on the verdict**: if the conviction score is at least 5 and the conviction P is outside 0.4-0.6, the
-  final P = 0.6 × money-weighted P + 0.4 × conviction P. A **strong** verdict also requires conviction to agree.
+- **Effect on the verdict**: the verdict uses the conviction read from **post-start fills and resting orders**
+  (falling back to all fills when there isn't any). Pre-start fills are opinion, so a pre-game 99¢ buy can't
+  outvote in-play evidence. If that score is at least 5 and its P is outside 0.4-0.6, the final P = 0.6 ×
+  money-weighted P + 0.4 × conviction P. A **strong** verdict also requires conviction to agree.
   If conviction leans the other way, a note says so and strong drops to weak.
 
 ### Wallet behaviour and track record (Wallets tab)
