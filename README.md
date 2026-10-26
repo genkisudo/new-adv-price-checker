@@ -7,8 +7,8 @@ There are two ways to use it:
 - **Web UI** (`app.py`, Streamlit + Plotly): paste ids or links and get an interactive dashboard.
 - **CLI** (`pm_data_checker.py`): prints a text report and saves a PNG chart. It is also the importable module the UI uses.
 
-Every API it calls is public and needs no key: Gamma (markets), CLOB (book and price history), the Data API
-(trades, OI, holders), and public Polygon RPCs for the UMA oracle events.
+Every API it calls is public and needs no key: Gamma (markets), CLOB (order book), the Data API
+(trades, OI, holders, and price history via `/v2/prices-history`), and public Polygon RPCs for the UMA oracle events.
 
 ## Install
 ```bash
@@ -164,7 +164,9 @@ events, keeps those from the market's adapter (Gamma `resolvedBy`), and matches 
 
 ## Caveats
 - On thin markets a single $10 order moves the displayed price, so check the dollar weight before trusting a verdict.
-- Price history comes as midpoint-style samples taken about every 10 minutes, not as trades. The spread band shows
+- Price history comes from the Data API `/v2/prices-history` as displayed-price buckets, not trades: 1-minute
+  buckets for roughly the last week (the API's limit) and 10-minute buckets before that. The old CLOB
+  `/prices-history` endpoint is shut down on 2026-10-30 and is only used as a fallback until then. The spread band shows
   only the current book, because the public API has no historical spread.
 - Holder concentration divides by OI and only counts the top holders the API returns. Once positions are redeemed,
   OI and holders drop to 0.

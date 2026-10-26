@@ -3,8 +3,8 @@
 
 Usage: python pm_data_checker.py <gamma_market_id> [--out chart.png] [--tz Europe/Madrid] [--full] [--no-uma] [--no-wallets]
 
-Public APIs only (no keys): Gamma (market), CLOB (book, price history),
-Data API (trades, open interest, holders), and a public Polygon RPC for the
+Public APIs only (no keys): Gamma (market), CLOB (book), Data API (trades, open interest,
+holders, v2 price history), and a public Polygon RPC for the
 UMA Optimistic Oracle ProposePrice / DisputePrice / Settle events.
 Dependencies: requests, matplotlib.
 """
@@ -136,19 +136,57 @@ def fetch_trades(cond, max_pages=10, taker_only=True):
     return sorted(out, key=lambda t: t["timestamp"])
 
 
+def _v2_history(token, **params):
+    """Page through data-api /v2/prices-history; returns raw points [{timestamp, price, resolution_seconds}]."""
+    out, cursor = [], None
+    for _ in range(50):
+        q = dict(tokenId=token, limit=10000, **params)
+        if cursor:
+            q["cursor"] = cursor
+        r = get(f"{DATA}/v2/prices-history", **q) or {}
+        if r.get("error"):
+            raise requests.RequestException(r["error"])
+        out += r.get("data") or []
+        pg = r.get("pagination") or {}
+        cursor = pg.get("next_cursor")
+        if not pg.get("has_more") or not cursor:
+            break
+    return out
+
+
 def fetch_history(token, start_ts=None):
-    h = (get(f"{CLOB}/prices-history", market=token, interval="max", fidelity=1) or {}).get("history") or []
-    if not h and start_ts:  # fallback: explicit window (API rejects very long windows, so chunk by ~7 days)
+    """Price history as [{t, p}] (what the rest of the code expects).
+
+    Uses data-api v2 prices-history (the CLOB /prices-history endpoint is shut down 2026-10-30 00:00 UTC).
+    v2 limits: interval=max needs bucketSeconds >= 600; 60 s buckets need a start/end window of <= 15 days and
+    only exist for roughly the last week. So: whole life at 10-minute buckets, then overlay 1-minute buckets
+    where the API has them. Settlement prints (resolution_seconds == 0) are dropped, matching the old series.
+    """
+    try:
+        coarse = _v2_history(token, interval="max", bucketSeconds=600)
+        fine = []
         now = int(time.time())
-        s = int(start_ts)
-        while s < now:
-            e = min(s + 7 * 86400, now)
+        fs = max(now - 15 * 86400 + 300, int(start_ts or 0), int(coarse[0]["timestamp"]) if coarse else 0)
+        if fs < now:
             try:
-                h += (get(f"{CLOB}/prices-history", market=token, startTs=s, endTs=e, fidelity=1) or {}).get("history") or []
+                fine = _v2_history(token, start=fs, end=now, bucketSeconds=60)
             except requests.RequestException:
-                break
-            s = e
-    return h
+                fine = []
+        fine = [x for x in fine if x.get("resolution_seconds")]
+        if fine:
+            lo, hi = fine[0]["timestamp"], fine[-1]["timestamp"]
+            coarse = [x for x in coarse if x["timestamp"] < lo or x["timestamp"] > hi]
+        pts = sorted((x for x in coarse + fine if x.get("resolution_seconds")), key=lambda x: x["timestamp"])
+        h = [{"t": int(x["timestamp"]), "p": float(x["price"])} for x in pts]
+        if h:
+            return h
+    except requests.RequestException:
+        pass
+    # legacy fallback (CLOB endpoint; harmless until it is removed on 2026-10-30)
+    try:
+        return (get(f"{CLOB}/prices-history", market=token, interval="max", fidelity=1) or {}).get("history") or []
+    except requests.RequestException:
+        return []
 
 
 def book_top(token):
